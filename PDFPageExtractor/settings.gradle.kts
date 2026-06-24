@@ -10,7 +10,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // maven { url = uri("https://maven.artifex.com/") } // TODO: unreachable; restore when accessible
     }
 }
 rootProject.name = "PDFPageExtractor"
