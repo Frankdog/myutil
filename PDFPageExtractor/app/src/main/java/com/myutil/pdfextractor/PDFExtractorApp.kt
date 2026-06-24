@@ -16,6 +16,7 @@ import com.myutil.pdfextractor.navigation.NavRoutes
 import com.myutil.pdfextractor.ui.filelist.FileListScreen
 import com.myutil.pdfextractor.ui.filelist.FileListViewModel
 import com.myutil.pdfextractor.ui.pagegrid.PageGridScreen
+import com.myutil.pdfextractor.ui.scan.ScanPreviewScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -60,6 +61,11 @@ fun PDFExtractorApp(
             )
             PageGridScreen(
                 uri = uri,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(NavRoutes.Scan.route) {
+            ScanPreviewScreen(
                 onBack = { navController.popBackStack() }
             )
         }
