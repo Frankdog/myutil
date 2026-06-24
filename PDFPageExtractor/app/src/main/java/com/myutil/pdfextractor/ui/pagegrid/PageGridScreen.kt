@@ -46,13 +46,17 @@ fun PageGridScreen(
         outputUri?.let { viewModel.exportSelected(it) }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
     LaunchedEffect(exportResult) {
         exportResult?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Short)
             viewModel.clearExportResult()
         }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("选择页面") },

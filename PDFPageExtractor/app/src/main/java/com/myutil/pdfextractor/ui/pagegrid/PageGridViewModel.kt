@@ -43,6 +43,7 @@ class PageGridViewModel(application: Application) : AndroidViewModel(application
     fun loadPdf(uri: Uri) {
         viewModelScope.launch {
             _isLoading.value = true
+            recycleAllBitmaps()
             try {
                 val handle = withContext(Dispatchers.IO) { repository.loadPdf(uri) }
                 documentHandle = handle
@@ -110,8 +111,13 @@ class PageGridViewModel(application: Application) : AndroidViewModel(application
         _exportResult.value = null
     }
 
+    private fun recycleAllBitmaps() {
+        _pages.value.forEach { it.bitmap?.recycle() }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        recycleAllBitmaps()
         documentHandle?.let { repository.closeDocument(it) }
     }
 }
