@@ -9,4 +9,5 @@ sealed class NavRoutes(val route: String) {
         fun buildRoute(uri: String): String =
             "page_grid/${URLEncoder.encode(uri, StandardCharsets.UTF_8.toString())}"
     }
+    data object Scan : NavRoutes("scan")
 }
