@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.core.Point
@@ -47,6 +48,11 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
     private val _shareUri = MutableStateFlow<Uri?>(null)
     val shareUri: StateFlow<Uri?> = _shareUri.asStateFlow()
 
+    private val _isExportSuccess = MutableStateFlow(false)
+    val isExportSuccess: StateFlow<Boolean> = _isExportSuccess.asStateFlow()
+
+    private var cornerWarpJob: Job? = null
+
     var showOriginal by mutableStateOf(false)
         private set
 
@@ -54,6 +60,11 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _isProcessing.value = true
             try {
+                _originalBitmap.value?.recycle()
+                _correctedBitmap.value?.recycle()
+                _originalBitmap.value = null
+                _correctedBitmap.value = null
+
                 val bitmap = withContext(Dispatchers.IO) {
                     val inputStream = getApplication<Application>().contentResolver.openInputStream(uri)
                     inputStream?.use { BitmapFactory.decodeStream(it) }
@@ -92,7 +103,8 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun updateCorner(index: Int, x: Float, y: Float) {
-        viewModelScope.launch {
+        cornerWarpJob?.cancel()
+        cornerWarpJob = viewModelScope.launch {
             val currentCorners = _cornerPoints.value.toMutableList()
             if (index !in currentCorners.indices) return@launch
             currentCorners[index] = Point(x.toDouble(), y.toDouble())
@@ -131,6 +143,7 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
                 exportedCacheFile = cacheFile
                 val authority = "${getApplication<Application>().packageName}.fileprovider"
                 _shareUri.value = FileProvider.getUriForFile(getApplication(), authority, cacheFile)
+                _isExportSuccess.value = true
                 _exportResult.value = "导出成功"
             } catch (e: Exception) {
                 _exportResult.value = "导出失败: ${e.message}"
@@ -159,6 +172,7 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun clearExportResult() {
+        _isExportSuccess.value = false
         _exportResult.value = null
     }
 

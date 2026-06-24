@@ -52,15 +52,19 @@ class ImageProcessor {
                 val approx = MatOfPoint2f()
                 val epsilon = 0.02 * Imgproc.arcLength(contour2f, true)
                 Imgproc.approxPolyDP(contour2f, approx, epsilon, true)
+                contour2f.release()
                 if (approx.toArray().size == 4) {
                     maxArea = area
                     documentContour = approx
+                } else {
+                    approx.release()
                 }
             }
 
             if (documentContour == null) return null
 
             val corners = documentContour.toArray().toList()
+            documentContour.release()
             val ordered = orderCorners(corners)
             val width = 595
             val height = 842

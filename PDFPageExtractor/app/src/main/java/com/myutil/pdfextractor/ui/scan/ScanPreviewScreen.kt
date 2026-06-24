@@ -112,12 +112,14 @@ fun ScanPreviewScreen(
         outputUri?.let { viewModel.saveToPermanentLocation(it) }
     }
 
+    val isExportSuccess by viewModel.isExportSuccess.collectAsState()
+
     exportResult?.let { message ->
-        val isExportSuccess = shareUri != null && message == "导出成功"
+        val showShareSave = shareUri != null && isExportSuccess
         ExportResultDialog(
             message = message,
             onDismiss = { viewModel.clearExportResult() },
-            onShare = if (isExportSuccess && shareUri != null) {
+            onShare = if (showShareSave && shareUri != null) {
                 {
                     val intent = Intent(Intent.ACTION_SEND).apply {
                         type = "application/pdf"
@@ -127,7 +129,7 @@ fun ScanPreviewScreen(
                     context.startActivity(Intent.createChooser(intent, "分享到"))
                 }
             } else null,
-            onSave = if (isExportSuccess) {
+            onSave = if (showShareSave) {
                 { saveLauncher.launch("scanned_document.pdf") }
             } else null
         )
