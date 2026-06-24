@@ -163,19 +163,27 @@ class ImageProcessor {
         val gray = Mat()
         Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGRA2GRAY)
 
-        // 提亮暗部：15% 以下像素推到 15，85% 以上推到 255
-        val minMax = Core.minMaxLoc(gray)
-        val range = minMax.maxVal - minMax.minVal
-        val low = minMax.minVal + range * 0.15
-        val high = minMax.maxVal - range * 0.15
-        val alpha = 240.0 / (high - low)
-        val beta = 15.0 - low * alpha
-        val stretched = Mat()
-        gray.convertTo(stretched, CvType.CV_8UC1, alpha, beta)
+        // 1. 提取光照背景（大模糊，只保留光照，不保留文字）
+        val bg = Mat()
+        val blurSize = ((minOf(gray.cols(), gray.rows()) / 6) or 1).coerceIn(51, 501)
+        Imgproc.GaussianBlur(gray, bg, Size(blurSize.toDouble(), blurSize.toDouble()), 0.0)
 
+        // 2. 光照校正：原图 / 背景 * 255
+        val grayF = Mat()
+        val bgF = Mat()
+        gray.convertTo(grayF, CvType.CV_32F)
+        bg.convertTo(bgF, CvType.CV_32F)
+        bg.release()
+        Core.divide(grayF, bgF, grayF, 255.0)
+        grayF.convertTo(gray, CvType.CV_8UC1)
+        grayF.release()
+        bgF.release()
+
+        // 3. 轻微高斯去噪
         val blurred = Mat()
-        Imgproc.GaussianBlur(stretched, blurred, Size(3.0, 3.0), 0.0)
+        Imgproc.GaussianBlur(gray, blurred, Size(3.0, 3.0), 0.0)
 
+        // 4. Otsu 二值化
         val binary = Mat()
         Imgproc.threshold(blurred, binary, 0.0, 255.0, Imgproc.THRESH_OTSU)
 
@@ -188,7 +196,6 @@ class ImageProcessor {
 
         src.release()
         gray.release()
-        stretched.release()
         blurred.release()
         binary.release()
         return outBitmap
