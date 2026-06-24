@@ -48,13 +48,15 @@ class PdfRepository(private val context: Context) {
             val outputStream = FileOutputStream(outputFd.fileDescriptor)
             val sortedPages = pages.sorted()
             val newDocument = PdfDocument()
+            val pageCount = handle.renderer.pageCount
 
-            for (pageIndex in sortedPages) {
+            sortedPages.forEachIndexed { outputIndex, pageIndex ->
+                if (pageIndex !in 0 until pageCount) return@forEachIndexed
                 val srcPage = handle.renderer.openPage(pageIndex)
                 val width = srcPage.width * 2  // 2x for reasonable quality
                 val height = srcPage.height * 2
 
-                val pageInfo = PdfDocument.PageInfo.Builder(width, height, sortedPages.indexOf(pageIndex) + 1).create()
+                val pageInfo = PdfDocument.PageInfo.Builder(width, height, outputIndex + 1).create()
                 val page = newDocument.startPage(pageInfo)
                 val canvas = page.canvas
                 val scaleX = width.toFloat() / srcPage.width

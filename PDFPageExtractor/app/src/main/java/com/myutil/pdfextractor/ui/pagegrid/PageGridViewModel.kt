@@ -133,7 +133,9 @@ internal fun parsePageRange(input: String, maxPage: Int): Set<Int> {
             if (range.size == 2) {
                 val start = range[0].trim().toIntOrNull() ?: continue
                 val end = range[1].trim().toIntOrNull() ?: continue
-                (start - 1 until end).forEach { if (it in 0 until maxPage) result.add(it) }
+                val actualStart = minOf(start, end)
+                val actualEnd = maxOf(start, end)
+                (actualStart - 1 until actualEnd).forEach { if (it in 0 until maxPage) result.add(it) }
             }
         } else {
             val page = trimmed.toIntOrNull()
