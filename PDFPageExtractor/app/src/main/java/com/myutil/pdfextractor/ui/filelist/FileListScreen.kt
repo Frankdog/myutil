@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +22,7 @@ import java.text.DecimalFormat
 @Composable
 fun FileListScreen(
     onPdfSelected: (Uri) -> Unit,
+    onScanClick: () -> Unit,
     viewModel: FileListViewModel = viewModel()
 ) {
     val pdfFiles by viewModel.pdfFiles.collectAsState()
@@ -38,13 +38,6 @@ fun FileListScreen(
             TopAppBar(
                 title = { Text("PDF提取") }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = {
-                filePickerLauncher.launch(arrayOf("application/pdf"))
-            }) {
-                Icon(Icons.Default.Add, contentDescription = "添加PDF")
-            }
         }
     ) { padding ->
         if (pdfFiles.isEmpty()) {
@@ -54,18 +47,21 @@ fun FileListScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.PictureAsPdf,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    EntryCard(
+                        icon = "\uD83D\uDCC4",
+                        title = "PDF 提取",
+                        description = "选择 PDF → 选页 → 导出",
+                        onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) }
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "点击 + 添加PDF文件",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    EntryCard(
+                        icon = "\uD83D\uDCF7",
+                        title = "文档扫描",
+                        description = "拍照 → 矫正 → 导出 PDF",
+                        onClick = onScanClick
                     )
                 }
             }
@@ -77,12 +73,73 @@ fun FileListScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = false,
+                            onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                            label = { Text("+ PDF") }
+                        )
+                        FilterChip(
+                            selected = false,
+                            onClick = onScanClick,
+                            label = { Text("\uD83D\uDCF7 扫描") }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "已添加的 PDF",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
                 items(pdfFiles) { pdf ->
                     PdfFileItem(
                         info = pdf,
                         onClick = { onPdfSelected(pdf.uri) }
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntryCard(
+    icon: String,
+    title: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = icon, style = MaterialTheme.typography.headlineLarge)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(text = title, style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

@@ -46,7 +46,8 @@ fun PDFExtractorApp(
             FileListScreen(
                 onPdfSelected = { uri ->
                     navController.navigate(NavRoutes.PageGrid.buildRoute(uri.toString()))
-                }
+                },
+                onScanClick = { navController.navigate(NavRoutes.Scan.route) }
             )
         }
         composable(
