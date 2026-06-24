@@ -1,5 +1,6 @@
 package com.myutil.pdfextractor.ui.pagegrid
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
 import com.myutil.pdfextractor.ui.common.ExportResultDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +48,9 @@ fun PageGridScreen(
     val pages by viewModel.pages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val exportResult by viewModel.exportResult.collectAsState()
+    val shareUri by viewModel.shareUri.collectAsState()
+
+    val context = LocalContext.current
 
     LaunchedEffect(uri) {
         viewModel.loadPdf(Uri.parse(uri))
@@ -54,13 +59,27 @@ fun PageGridScreen(
     val saveLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
     ) { outputUri ->
-        outputUri?.let { viewModel.exportSelected(it) }
+        outputUri?.let { viewModel.saveToPermanentLocation(it) }
     }
 
     exportResult?.let { message ->
+        val isExportSuccess = shareUri != null && message == "导出成功"
         ExportResultDialog(
             message = message,
-            onDismiss = { viewModel.clearExportResult() }
+            onDismiss = { viewModel.clearExportResult() },
+            onShare = if (isExportSuccess && shareUri != null) {
+                {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/pdf"
+                        putExtra(Intent.EXTRA_STREAM, shareUri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "分享到"))
+                }
+            } else null,
+            onSave = if (isExportSuccess) {
+                { saveLauncher.launch("extracted_pages.pdf") }
+            } else null
         )
     }
 
@@ -102,9 +121,7 @@ fun PageGridScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
-                        onClick = {
-                            saveLauncher.launch("extracted_pages.pdf")
-                        },
+                        onClick = { viewModel.exportToCache() },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = pages.any { it.isSelected }
                     ) {

@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.myutil.pdfextractor.data.PdfDocumentHandle
@@ -16,6 +17,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 data class PageItem(
     val index: Int,
@@ -27,6 +31,7 @@ data class PageItem(
 class PageGridViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PdfRepository(application)
     private var documentHandle: PdfDocumentHandle? = null
+    private var exportedCacheFile: File? = null
 
     private val _pages = MutableStateFlow<List<PageItem>>(emptyList())
     val pages: StateFlow<List<PageItem>> = _pages.asStateFlow()
@@ -37,6 +42,12 @@ class PageGridViewModel(application: Application) : AndroidViewModel(application
     private val _exportResult = MutableStateFlow<String?>(null)
     val exportResult: StateFlow<String?> = _exportResult.asStateFlow()
 
+    private val _shareUri = MutableStateFlow<Uri?>(null)
+    val shareUri: StateFlow<Uri?> = _shareUri.asStateFlow()
+
+    private val _selectedCount = MutableStateFlow(0)
+    val selectedCount: StateFlow<Int> = _selectedCount.asStateFlow()
+
     var pageRangeInput by mutableStateOf("")
         private set
 
@@ -44,6 +55,8 @@ class PageGridViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _isLoading.value = true
             recycleAllBitmaps()
+            exportedCacheFile = null
+            _shareUri.value = null
             try {
                 val handle = withContext(Dispatchers.IO) { repository.loadPdf(uri) }
                 documentHandle = handle
@@ -88,7 +101,7 @@ class PageGridViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun exportSelected(outputUri: Uri) {
+    fun exportToCache() {
         viewModelScope.launch {
             val handle = documentHandle ?: return@launch
             val selectedPages = _pages.value.filter { it.isSelected }.map { it.index }.toSet()
@@ -96,13 +109,42 @@ class PageGridViewModel(application: Application) : AndroidViewModel(application
                 _exportResult.value = "请先选择要导出的页面"
                 return@launch
             }
+            _selectedCount.value = selectedPages.size
             try {
-                withContext(Dispatchers.IO) {
-                    repository.extractPages(handle, selectedPages, outputUri)
+                val cacheFile = withContext(Dispatchers.IO) {
+                    val app = getApplication<Application>()
+                    val file = File(app.cacheDir, "export_${System.currentTimeMillis()}.pdf")
+                    FileOutputStream(file).use { outputStream ->
+                        repository.extractPages(handle, selectedPages, outputStream)
+                    }
+                    file
                 }
+                exportedCacheFile = cacheFile
+                val authority = "${getApplication<Application>().packageName}.fileprovider"
+                _shareUri.value = FileProvider.getUriForFile(getApplication(), authority, cacheFile)
                 _exportResult.value = "导出成功"
             } catch (e: Exception) {
                 _exportResult.value = "导出失败: ${e.message}"
+            }
+        }
+    }
+
+    fun saveToPermanentLocation(outputUri: Uri) {
+        viewModelScope.launch {
+            val cacheFile = exportedCacheFile ?: return@launch
+            try {
+                withContext(Dispatchers.IO) {
+                    val inputStream = FileInputStream(cacheFile)
+                    val outputStream = getApplication<Application>().contentResolver.openOutputStream(outputUri)
+                    inputStream.use { input ->
+                        outputStream?.use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                }
+                _exportResult.value = "已保存"
+            } catch (e: Exception) {
+                _exportResult.value = "保存失败: ${e.message}"
             }
         }
     }

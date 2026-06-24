@@ -17,6 +17,8 @@ import com.myutil.pdfextractor.ui.filelist.FileListScreen
 import com.myutil.pdfextractor.ui.filelist.FileListViewModel
 import com.myutil.pdfextractor.ui.pagegrid.PageGridScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 @Composable
 fun PDFExtractorApp(
@@ -51,7 +53,10 @@ fun PDFExtractorApp(
             NavRoutes.PageGrid.route,
             arguments = listOf(navArgument("uri") { type = NavType.StringType })
         ) { backStackEntry ->
-            val uri = backStackEntry.arguments?.getString("uri") ?: return@composable
+            val uri = URLDecoder.decode(
+                backStackEntry.arguments?.getString("uri") ?: return@composable,
+                StandardCharsets.UTF_8.toString()
+            )
             PageGridScreen(
                 uri = uri,
                 onBack = { navController.popBackStack() }

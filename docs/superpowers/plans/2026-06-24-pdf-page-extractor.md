@@ -1295,21 +1295,6 @@ fun PDFExtractorApp(
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable(NavRoutes.FileList.route) {
-            val viewModel: FileListViewModel = viewModel()
-            val navigateUri by viewModel.navigateToPageGrid.collectAsState()
-
-            LaunchedEffect(navigateUri) {
-                navigateUri?.let { uri ->
-                    viewModel.onNavigatedToPageGrid()
-                    navController.navigate(NavRoutes.PageGrid.buildRoute(uri.toString()))
-                }
-            }
-
-            // Also add shared URI to file list if present
-            LaunchedEffect(sharedUri) {
-                sharedUri?.let { viewModel.addPdfFile(it) }
-            }
-
             FileListScreen(
                 onPdfSelected = { uri ->
                     navController.navigate(NavRoutes.PageGrid.buildRoute(uri.toString()))

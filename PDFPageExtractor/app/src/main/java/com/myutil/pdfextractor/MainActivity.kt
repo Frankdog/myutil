@@ -37,17 +37,29 @@ class MainActivity : ComponentActivity() {
         when (intent?.action) {
             Intent.ACTION_SEND -> {
                 if (intent.type == "application/pdf") {
-                    sharedUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                     } else {
                         @Suppress("DEPRECATION")
                         intent.getParcelableExtra(Intent.EXTRA_STREAM)
                     }
+                    uri?.let { takePersistableUriPermission(it) }
+                    sharedUri = uri
                 }
             }
             Intent.ACTION_VIEW -> {
-                sharedUri = intent.data
+                val uri = intent.data
+                uri?.let { takePersistableUriPermission(it) }
+                sharedUri = uri
             }
         }
+    }
+
+    private fun takePersistableUriPermission(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Exception) { }
     }
 }
