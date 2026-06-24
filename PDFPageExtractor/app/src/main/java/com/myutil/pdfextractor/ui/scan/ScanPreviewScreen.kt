@@ -21,13 +21,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
+import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.myutil.pdfextractor.ui.common.ExportResultDialog
 import org.opencv.core.Point
@@ -199,11 +201,13 @@ fun ScanPreviewScreen(
                 displayBitmap?.let { bitmap ->
                     val imageWidth = bitmap.width.toFloat()
                     val imageHeight = bitmap.height.toFloat()
+                    var containerSize by remember { mutableStateOf(Size.Zero) }
 
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .onSizeChanged { containerSize = it.toSize() },
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
@@ -216,33 +220,47 @@ fun ScanPreviewScreen(
                         )
 
                         if (!viewModel.showOriginal && cornerPoints.isNotEmpty()) {
-                            val scaleX = 1f / imageWidth
-                            val scaleY = 1f / imageHeight
-                            cornerPoints.forEachIndexed { index, point ->
-                                val xFrac = (point.x / imageWidth)
-                                val yFrac = (point.y / imageHeight)
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .pointerInput(index) {
-                                            detectDragGestures { _, dragAmount ->
-                                                val dx = dragAmount.x * scaleX
-                                                val dy = dragAmount.y * scaleY
-                                                viewModel.updateCorner(
-                                                    index,
-                                                    (point.x + dx).toFloat().coerceIn(0f, imageWidth),
-                                                    (point.y + dy).toFloat().coerceIn(0f, imageHeight)
-                                                )
-                                            }
-                                        }
-                                ) {
+                            val containerWidth = containerSize.width
+                            val containerHeight = containerSize.height
+
+                            if (containerWidth > 0 && containerHeight > 0) {
+                                val imageAspect = imageWidth / imageHeight
+                                val containerAspect = containerWidth / containerHeight
+
+                                val displayWidth: Float
+                                val displayHeight: Float
+                                if (imageAspect > containerAspect) {
+                                    displayWidth = containerWidth
+                                    displayHeight = containerWidth / imageAspect
+                                } else {
+                                    displayHeight = containerHeight
+                                    displayWidth = containerHeight * imageAspect
+                                }
+
+                                val offsetX = (containerWidth - displayWidth) / 2f
+                                val offsetY = (containerHeight - displayHeight) / 2f
+                                val scale = imageWidth / displayWidth
+
+                                cornerPoints.forEachIndexed { index, point ->
+                                    val currentPoint by rememberUpdatedState(point)
+
+                                    val displayPointX = offsetX + (point.x / imageWidth) * displayWidth
+                                    val displayPointY = offsetY + (point.y / imageHeight) * displayHeight
+
                                     Box(
                                         modifier = Modifier
+                                            .offset { IntOffset(displayPointX.roundToInt(), displayPointY.roundToInt()) }
                                             .size(24.dp)
-                                            .graphicsLayer {
-                                                translationX = (point.x * scaleX).toFloat()
-                                                translationY = (point.y * scaleY).toFloat()
-                                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                                            .pointerInput(index) {
+                                                detectDragGestures { change, dragAmount ->
+                                                    change.consume()
+                                                    val p = currentPoint
+                                                    viewModel.updateCorner(
+                                                        index,
+                                                        (p.x.toFloat() + dragAmount.x * scale).coerceIn(0f, imageWidth),
+                                                        (p.y.toFloat() + dragAmount.y * scale).coerceIn(0f, imageHeight)
+                                                    )
+                                                }
                                             }
                                             .clip(CircleShape)
                                             .background(Color(0xFF6366F1))
