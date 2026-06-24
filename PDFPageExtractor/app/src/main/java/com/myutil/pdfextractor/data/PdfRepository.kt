@@ -83,14 +83,16 @@ class PdfRepository(private val context: Context) {
         }
     }
 
-    fun createPdfFromBitmap(bitmap: Bitmap, outputStream: OutputStream) {
+    fun createPdfFromBitmap(bitmap: Bitmap, outputStream: OutputStream, pageWidth: Int? = null, pageHeight: Int? = null) {
         val pdfDocument = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val w = pageWidth ?: bitmap.width
+        val h = pageHeight ?: bitmap.height
+        val pageInfo = PdfDocument.PageInfo.Builder(w, h, 1).create()
         val page = pdfDocument.startPage(pageInfo)
         val canvas = page.canvas
-        val scale = minOf(595f / bitmap.width, 842f / bitmap.height)
-        val left = (595 - bitmap.width * scale) / 2f
-        val top = (842 - bitmap.height * scale) / 2f
+        val scale = minOf(w.toFloat() / bitmap.width, h.toFloat() / bitmap.height)
+        val left = (w - bitmap.width * scale) / 2f
+        val top = (h - bitmap.height * scale) / 2f
         canvas.drawBitmap(bitmap, left, top, null)
         pdfDocument.finishPage(page)
         pdfDocument.writeTo(outputStream)

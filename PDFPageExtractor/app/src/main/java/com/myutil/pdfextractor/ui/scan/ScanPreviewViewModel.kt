@@ -66,11 +66,24 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
                 _correctedBitmap.value = null
 
                 val bitmap = withContext(Dispatchers.IO) {
-                    val inputStream = getApplication<Application>().contentResolver.openInputStream(uri)
-                    inputStream?.use { BitmapFactory.decodeStream(it) }
-                } ?: return@launch
+                    val cr = getApplication<Application>().contentResolver
+                    try {
+                        val fd = cr.openFileDescriptor(uri, "r") ?: return@withContext null
+                        fd.use { BitmapFactory.decodeFileDescriptor(it.fileDescriptor) }
+                    } catch (e: Exception) {
+                        val inputStream = cr.openInputStream(uri) ?: return@withContext null
+                        inputStream.use { BitmapFactory.decodeStream(it) }
+                    }
+                }
+                if (bitmap == null) {
+                    _exportResult.value = "无法读取图片，请检查文件权限"
+                    return@launch
+                }
                 _originalBitmap.value = bitmap
-                runCorrection(bitmap)
+                val printReady = withContext(Dispatchers.IO) {
+                    imageProcessor.toPrintReady(bitmap)
+                }
+                _correctedBitmap.value = printReady
             } catch (e: Exception) {
                 _exportResult.value = "加载图片失败: ${e.message}"
             } finally {
@@ -92,13 +105,21 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun runCorrection(bitmap: Bitmap) = withContext(Dispatchers.IO) {
-        val result = imageProcessor.autoCorrect(bitmap)
-        if (result != null) {
-            _correctedBitmap.value = result.correctedBitmap
-            _cornerPoints.value = result.corners
-        } else {
-            _exportResult.value = "未自动检测到文档边缘，请手动调整或选择其他图片"
-            _correctedBitmap.value = bitmap
+        try {
+            android.util.Log.d("ScanVM", "runCorrection start: ${bitmap.width}x${bitmap.height} config=${bitmap.config}")
+            val result = imageProcessor.autoCorrect(bitmap)
+            if (result != null) {
+                android.util.Log.d("ScanVM", "autoCorrect OK: ${result.correctedBitmap.width}x${result.correctedBitmap.height}")
+                _correctedBitmap.value = result.correctedBitmap
+                _cornerPoints.value = result.corners
+            } else {
+                android.util.Log.d("ScanVM", "autoCorrect returned null (no contour found)")
+                _exportResult.value = "未自动检测到文档边缘，请手动调整或选择其他图片"
+                _correctedBitmap.value = bitmap
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ScanVM", "runCorrection failed", e)
+            _exportResult.value = "处理失败: ${e.message}"
         }
     }
 
@@ -136,7 +157,7 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
                     val app = getApplication<Application>()
                     val file = File(app.cacheDir, "scan_${System.currentTimeMillis()}.pdf")
                     FileOutputStream(file).use { outputStream ->
-                        repository.createPdfFromBitmap(bitmap, outputStream)
+                        repository.createPdfFromBitmap(bitmap, outputStream, bitmap.width, bitmap.height)
                     }
                     file
                 }

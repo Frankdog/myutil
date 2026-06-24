@@ -27,37 +27,91 @@ class ImageProcessor {
 
     fun autoCorrect(bitmap: Bitmap): AutoCorrectResult? {
         ensureInitialized()
+        android.util.Log.d("ImgProc", "input bitmap: ${bitmap.width}x${bitmap.height} config=${bitmap.config}")
+        val argb = if (bitmap.config != Bitmap.Config.ARGB_8888) {
+            android.util.Log.d("ImgProc", "converting to ARGB_8888")
+            bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        } else bitmap
         val src = Mat()
         val gray = Mat()
         val blurred = Mat()
         val edges = Mat()
         val hierarchy = Mat()
         try {
-            Utils.bitmapToMat(bitmap, src)
+            Utils.bitmapToMat(argb, src)
+            android.util.Log.d("ImgProc", "src Mat: ${src.cols()}x${src.rows()} channels=${src.channels()}")
+            if (argb !== bitmap) argb.recycle()
 
-            Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
-            Imgproc.Canny(blurred, edges, 50.0, 200.0)
+            Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGRA2GRAY)
+            Imgproc.GaussianBlur(gray, blurred, Size(3.0, 3.0), 0.0)
+            Imgproc.Canny(blurred, edges, 30.0, 100.0)
 
             val contours = ArrayList<MatOfPoint>()
-            Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+            Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
 
-            var maxArea = 0.0
+            android.util.Log.d("ImgProc", "total contours found=${contours.size}")
+
+            val imgW = src.cols()
+            val imgH = src.rows()
+            val margin = (minOf(imgW, imgH) * 0.02).toInt().coerceAtLeast(5)
+            var bestArea = 0.0
             var documentContour: MatOfPoint2f? = null
 
-            for (contour in contours) {
-                val area = Imgproc.contourArea(contour)
-                if (area < maxArea) continue
-                val contour2f = MatOfPoint2f(*contour.toArray())
-                val approx = MatOfPoint2f()
-                val epsilon = 0.02 * Imgproc.arcLength(contour2f, true)
-                Imgproc.approxPolyDP(contour2f, approx, epsilon, true)
-                contour2f.release()
-                if (approx.toArray().size == 4) {
-                    maxArea = area
-                    documentContour = approx
-                } else {
-                    approx.release()
+            // Try multiple epsilon values for robustness
+            val epsilons = listOf(0.01, 0.02, 0.03, 0.05, 0.08)
+
+            for (epsilonFactor in epsilons) {
+                for (contour in contours) {
+                    val area = Imgproc.contourArea(contour)
+                    if (area < imgW * imgH * 0.01) continue // skip tiny contours
+                    val contour2f = MatOfPoint2f(*contour.toArray())
+                    val approx = MatOfPoint2f()
+                    val epsilon = epsilonFactor * Imgproc.arcLength(contour2f, true)
+                    Imgproc.approxPolyDP(contour2f, approx, epsilon, true)
+                    contour2f.release()
+                    if (approx.toArray().size != 4) {
+                        approx.release()
+                        continue
+                    }
+                    val points = approx.toArray()
+                    val touchesEdge = points.any { pt ->
+                        pt.x <= margin || pt.y <= margin ||
+                        pt.x >= imgW - margin || pt.y >= imgH - margin
+                    }
+                    if (touchesEdge) {
+                        approx.release()
+                        continue
+                    }
+                    if (area > bestArea) {
+                        bestArea = area
+                        documentContour?.release()
+                        documentContour = approx
+                    } else {
+                        approx.release()
+                    }
+                }
+                if (documentContour != null) {
+                    android.util.Log.d("ImgProc", "found doc contour at epsilon=$epsilonFactor area=$bestArea")
+                    break
+                }
+            }
+
+            // Fallback: use largest 4-point contour (even if touches edge)
+            if (documentContour == null) {
+                android.util.Log.d("ImgProc", "fallback: using largest 4-point contour (touching edge OK)")
+                for (contour in contours) {
+                    val area = Imgproc.contourArea(contour)
+                    if (area < bestArea) continue
+                    val contour2f = MatOfPoint2f(*contour.toArray())
+                    val approx = MatOfPoint2f()
+                    val epsilon = 0.02 * Imgproc.arcLength(contour2f, true)
+                    Imgproc.approxPolyDP(contour2f, approx, epsilon, true)
+                    contour2f.release()
+                    if (approx.toArray().size == 4) {
+                        bestArea = area
+                        documentContour?.release()
+                        documentContour = approx
+                    } else { approx.release() }
                 }
             }
 
@@ -82,13 +136,11 @@ class ImageProcessor {
             val warped = Mat()
             Imgproc.warpPerspective(src, warped, transform, Size(width.toDouble(), height.toDouble()))
 
-            val binarized = binarize(warped)
-
-            val outBitmap = Bitmap.createBitmap(binarized.cols(), binarized.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(binarized, outBitmap)
+            // Debug: skip binarize, show raw warp result
+            val outBitmap = Bitmap.createBitmap(warped.cols(), warped.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(warped, outBitmap)
 
             warped.release()
-            binarized.release()
 
             return AutoCorrectResult(correctedBitmap = outBitmap, corners = ordered)
         } finally {
@@ -100,10 +152,55 @@ class ImageProcessor {
         }
     }
 
+    fun toPrintReady(bitmap: Bitmap): Bitmap {
+        ensureInitialized()
+        val argb = if (bitmap.config != Bitmap.Config.ARGB_8888)
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
+        val src = Mat()
+        Utils.bitmapToMat(argb, src)
+        if (argb !== bitmap) argb.recycle()
+
+        val gray = Mat()
+        Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGRA2GRAY)
+
+        // 提亮暗部：15% 以下像素推到 15，85% 以上推到 255
+        val minMax = Core.minMaxLoc(gray)
+        val range = minMax.maxVal - minMax.minVal
+        val low = minMax.minVal + range * 0.15
+        val high = minMax.maxVal - range * 0.15
+        val alpha = 240.0 / (high - low)
+        val beta = 15.0 - low * alpha
+        val stretched = Mat()
+        gray.convertTo(stretched, CvType.CV_8UC1, alpha, beta)
+
+        val blurred = Mat()
+        Imgproc.GaussianBlur(stretched, blurred, Size(3.0, 3.0), 0.0)
+
+        val binary = Mat()
+        Imgproc.threshold(blurred, binary, 0.0, 255.0, Imgproc.THRESH_OTSU)
+
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
+        Imgproc.morphologyEx(binary, binary, Imgproc.MORPH_OPEN, kernel)
+        kernel.release()
+
+        val outBitmap = Bitmap.createBitmap(binary.cols(), binary.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(binary, outBitmap)
+
+        src.release()
+        gray.release()
+        stretched.release()
+        blurred.release()
+        binary.release()
+        return outBitmap
+    }
+
     fun warpPerspective(bitmap: Bitmap, corners: List<org.opencv.core.Point>, outputSize: org.opencv.core.Size): Bitmap {
         ensureInitialized()
+        val argb = if (bitmap.config != Bitmap.Config.ARGB_8888)
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
         val src = Mat()
-        Utils.bitmapToMat(bitmap, src)
+        Utils.bitmapToMat(argb, src)
+        if (argb !== bitmap) argb.recycle()
 
         val ordered = orderCorners(corners)
         val dstPoints = listOf(
@@ -134,9 +231,10 @@ class ImageProcessor {
 
     private fun binarize(mat: Mat): Mat {
         val gray = Mat()
-        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY)
+        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGRA2GRAY)
         val binary = Mat()
-        Imgproc.threshold(gray, binary, 0.0, 255.0, Imgproc.THRESH_OTSU)
+        Imgproc.adaptiveThreshold(gray, binary, 255.0,
+            Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 21, 2.0)
         val result = Mat()
         Imgproc.cvtColor(binary, result, Imgproc.COLOR_GRAY2RGBA)
         gray.release()
