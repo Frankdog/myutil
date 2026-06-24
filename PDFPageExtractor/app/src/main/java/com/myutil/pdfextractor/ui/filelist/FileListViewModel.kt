@@ -6,8 +6,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.myutil.pdfextractor.data.PdfRepository
 import com.myutil.pdfextractor.data.model.PdfInfo
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -17,8 +20,8 @@ class FileListViewModel(application: Application) : AndroidViewModel(application
     private val _pdfFiles = MutableStateFlow<List<PdfInfo>>(emptyList())
     val pdfFiles: StateFlow<List<PdfInfo>> = _pdfFiles.asStateFlow()
 
-    private val _navigateToPageGrid = MutableStateFlow<Uri?>(null)
-    val navigateToPageGrid: StateFlow<Uri?> = _navigateToPageGrid.asStateFlow()
+    private val _openFilePicker = MutableSharedFlow<Unit>()
+    val openFilePicker: SharedFlow<Unit> = _openFilePicker.asSharedFlow()
 
     fun addPdfFile(uri: Uri) {
         viewModelScope.launch {
@@ -27,22 +30,18 @@ class FileListViewModel(application: Application) : AndroidViewModel(application
                 val pageCount = repository.getPageCount(handle)
                 repository.closeDocument(handle)
 
-                val cursor = getApplication<Application>().contentResolver.query(
+                var name = uri.lastPathSegment ?: "Unknown"
+                var size = -1L
+                getApplication<Application>().contentResolver.query(
                     uri, null, null, null, null
-                )
-                val name = cursor?.use {
-                    if (it.moveToFirst()) {
-                        val nameIdx = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (nameIdx >= 0) it.getString(nameIdx) else uri.lastPathSegment ?: "Unknown"
-                    } else uri.lastPathSegment ?: "Unknown"
-                } ?: uri.lastPathSegment ?: "Unknown"
-
-                val size = cursor?.use {
-                    if (it.moveToFirst()) {
-                        val sizeIdx = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                        if (sizeIdx >= 0) it.getLong(sizeIdx) else -1L
-                    } else -1L
-                } ?: -1L
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        name = if (nameIdx >= 0) cursor.getString(nameIdx) else name
+                        val sizeIdx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        size = if (sizeIdx >= 0) cursor.getLong(sizeIdx) else size
+                    }
+                }
 
                 val info = PdfInfo(name = name, size = size, pageCount = pageCount, uri = uri)
                 val current = _pdfFiles.value.toMutableList()
@@ -56,11 +55,9 @@ class FileListViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun onPdfSelected(uri: Uri) {
-        _navigateToPageGrid.value = uri
-    }
-
-    fun onNavigatedToPageGrid() {
-        _navigateToPageGrid.value = null
+    fun onOpenFilePicker() {
+        viewModelScope.launch {
+            _openFilePicker.emit(Unit)
+        }
     }
 }

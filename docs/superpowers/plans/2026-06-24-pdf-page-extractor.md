@@ -14,7 +14,7 @@
 - Target SDK: 36
 - Package: `com.myutil.pdfextractor`
 - Single Activity, Compose Navigation
-- MuPDF AGPL license (personal use only)
+- Uses Android's built-in PdfRenderer + PdfDocument (no external PDF libs)
 - SAF for all file I/O (no raw file path access)
 - Dark/light theme support
 
@@ -67,7 +67,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://maven.artifex.com/") }
     }
 }
 rootProject.name = "PDFPageExtractor"
@@ -151,7 +150,9 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("com.artifex.mupdf:mupdf:1.24.0")
+    // MuPDF removed - using Android's built-in PdfRenderer + PdfDocument
+    // PdfRenderer (API 21+) for rendering page thumbnails
+    // PdfDocument (API 19+) for writing extracted pages
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 ```
@@ -447,11 +448,15 @@ Expected: BUILD SUCCESSFUL
 - Produces:
   - `data class PdfInfo(name: String, size: Long, pageCount: Int, uri: Uri)`
   - `class PdfRepository(context: Context)`
-    - `fun loadPdf(uri: Uri): PdfDocument` — opens PDF, returns handle
-    - `fun renderPage(document: PdfDocument, index: Int, width: Int, height: Int): Bitmap`
-    - `fun getPageCount(document: PdfDocument): Int`
-    - `fun extractPages(document: PdfDocument, pages: Set<Int>, outputUri: Uri)`
-    - `fun closeDocument(document: PdfDocument)`
+    - `fun loadPdf(uri: Uri): PdfDocumentHandle` — opens PDF via PdfRenderer
+    - `fun renderPage(handle: PdfDocumentHandle, index: Int, width: Int, height: Int): Bitmap`
+    - `fun getPageCount(handle: PdfDocumentHandle): Int`
+    - `fun extractPages(handle: PdfDocumentHandle, pages: Set<Int>, outputUri: Uri)`
+    - `fun closeDocument(handle: PdfDocumentHandle)`
+
+Uses Android's built-in APIs:
+- `android.graphics.pdf.PdfRenderer` (API 21+) for rendering page thumbnails
+- `android.graphics.pdf.PdfDocument` (API 19+) for writing extracted pages
 
 - [ ] **Step 1: Create PdfInfo.kt**
 
@@ -475,14 +480,14 @@ package com.myutil.pdfextractor.data
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.RectF
+import android.graphics.pdf.PdfDocument
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import com.artifex.mupdf.MuPDFDocument
 import java.io.FileOutputStream
 
 class PdfDocumentHandle internal constructor(
-    internal val doc: MuPDFDocument,
+    internal val renderer: PdfRenderer,
     internal val fd: ParcelFileDescriptor
 )
 
@@ -491,24 +496,25 @@ class PdfRepository(private val context: Context) {
     fun loadPdf(uri: Uri): PdfDocumentHandle {
         val fd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: throw IllegalArgumentException("Cannot open file: $uri")
-        val doc = MuPDFDocument.open(fd)
-        return PdfDocumentHandle(doc, fd)
+        val renderer = PdfRenderer(fd)
+        return PdfDocumentHandle(renderer, fd)
     }
 
     fun getPageCount(handle: PdfDocumentHandle): Int {
-        return handle.doc.countPages()
+        return handle.renderer.pageCount
     }
 
     fun renderPage(handle: PdfDocumentHandle, index: Int, width: Int, height: Int): Bitmap {
-        val page = handle.doc.getPage(index)
-        val bounds = page.bounds
-        val scale = minOf(width / bounds.width(), height / bounds.height())
-        val bitmap = Bitmap.createBitmap(
-            (bounds.width() * scale).toInt(),
-            (bounds.height() * scale).toInt(),
-            Bitmap.Config.ARGB_8888
-        )
-        page.run(bitmap, bounds, scale, scale)
+        val page = handle.renderer.openPage(index)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.WHITE)
+        val scaleX = width.toFloat() / page.width
+        val scaleY = height.toFloat() / page.height
+        val scale = minOf(scaleX, scaleY)
+        val matrix = android.graphics.Matrix()
+        matrix.setScale(scale, scale)
+        page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        page.close()
         return bitmap
     }
 
@@ -518,28 +524,25 @@ class PdfRepository(private val context: Context) {
         try {
             val outputStream = FileOutputStream(outputFd.fileDescriptor)
             val sortedPages = pages.sorted()
+            val newDocument = PdfDocument()
 
-            // Render each selected page to Bitmap, then write to new PDF
-            // using Android's built-in PdfDocument API
-            val newDocument = android.graphics.pdf.PdfDocument()
             for (pageIndex in sortedPages) {
-                val page = handle.doc.getPage(pageIndex)
-                val bounds = page.bounds
-                val scale = 72f / 72f // 1:1 at 72 DPI
-                val width = (bounds.width() * scale).toInt()
-                val height = (bounds.height() * scale).toInt()
+                val srcPage = handle.renderer.openPage(pageIndex)
+                val width = srcPage.width * 2  // 2x for reasonable quality
+                val height = srcPage.height * 2
 
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                page.run(bitmap, bounds, 1f, 1f)
-
-                val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(
-                    width, height, sortedPages.indexOf(pageIndex) + 1
-                ).create()
-                val canvas = newDocument.startPage(pageInfo)
-                canvas.drawBitmap(bitmap, 0f, null)
-                newDocument.finishPage(canvas)
-                bitmap.recycle()
+                val pageInfo = PdfDocument.PageInfo.Builder(width, height, sortedPages.indexOf(pageIndex) + 1).create()
+                val page = newDocument.startPage(pageInfo)
+                val canvas = page.canvas
+                val scaleX = width.toFloat() / srcPage.width
+                val scaleY = height.toFloat() / srcPage.height
+                val matrix = android.graphics.Matrix()
+                matrix.setScale(scaleX, scaleY)
+                srcPage.render(canvas, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                newDocument.finishPage(page)
+                srcPage.close()
             }
+
             newDocument.writeTo(outputStream)
             newDocument.close()
         } finally {
@@ -548,7 +551,7 @@ class PdfRepository(private val context: Context) {
     }
 
     fun closeDocument(handle: PdfDocumentHandle) {
-        handle.doc.destroy()
+        handle.renderer.close()
         handle.fd.close()
     }
 }
