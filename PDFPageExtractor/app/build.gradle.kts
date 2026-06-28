@@ -49,6 +49,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("com.quickbirdstudios:opencv:4.5.3.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
     // Using Android's built-in PdfRenderer + PdfDocument
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

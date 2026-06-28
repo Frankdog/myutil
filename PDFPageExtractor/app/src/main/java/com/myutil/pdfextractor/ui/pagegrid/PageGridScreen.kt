@@ -5,35 +5,25 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import com.myutil.pdfextractor.ui.common.ExportResultDialog
@@ -51,6 +41,7 @@ fun PageGridScreen(
     val shareUri by viewModel.shareUri.collectAsState()
 
     val context = LocalContext.current
+    val selectedCount = pages.count { it.isSelected }
 
     LaunchedEffect(uri) {
         viewModel.loadPdf(Uri.parse(uri))
@@ -62,31 +53,36 @@ fun PageGridScreen(
         outputUri?.let { viewModel.saveToPermanentLocation(it) }
     }
 
-    exportResult?.let { message ->
-        val isExportSuccess = shareUri != null && message == "导出成功"
+    exportResult?.let {
         ExportResultDialog(
-            message = message,
             onDismiss = { viewModel.clearExportResult() },
-            onShare = if (isExportSuccess && shareUri != null) {
-                {
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/pdf"
-                        putExtra(Intent.EXTRA_STREAM, shareUri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "分享到"))
+            onShare = {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_STREAM, shareUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-            } else null,
-            onSave = if (isExportSuccess) {
-                { saveLauncher.launch("extracted_pages.pdf") }
-            } else null
+                context.startActivity(Intent.createChooser(intent, "分享到"))
+            },
+            onSave = { saveLauncher.launch("extracted_pages.pdf") }
         )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("选择页面") },
+                title = {
+                    Column {
+                        Text("选择页面", fontWeight = FontWeight.SemiBold)
+                        if (pages.isNotEmpty()) {
+                            Text(
+                                "共 ${pages.size} 页",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -96,12 +92,14 @@ fun PageGridScreen(
         },
         bottomBar = {
             Surface(
+                tonalElevation = 3.dp,
                 shadowElevation = 8.dp
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -110,22 +108,22 @@ fun PageGridScreen(
                         OutlinedTextField(
                             value = viewModel.pageRangeInput,
                             onValueChange = { viewModel.updatePageRangeInput(it) },
-                            label = { Text("页码 (如 1,3,5-8)") },
+                            label = { Text("页码") },
+                            placeholder = { Text("如 1,3,5-8") },
                             modifier = Modifier.weight(1f),
                             singleLine = true
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Button(onClick = { viewModel.applyPageRangeInput() }) {
+                        FilledTonalButton(onClick = { viewModel.applyPageRangeInput() }) {
                             Text("应用")
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = { viewModel.exportToCache() },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = pages.any { it.isSelected }
+                        enabled = selectedCount > 0
                     ) {
-                        Text("导出选中 (${pages.count { it.isSelected }} 页)")
+                        Text(if (selectedCount > 0) "导出选中（${selectedCount} 页）" else "导出选中")
                     }
                 }
             }
@@ -138,7 +136,15 @@ fun PageGridScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "正在加载 PDF…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         } else {
             LazyVerticalGrid(
@@ -146,9 +152,9 @@ fun PageGridScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                contentPadding = PaddingValues(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(pages, key = { it.index }) { page ->
                     PageThumbnail(
@@ -166,59 +172,77 @@ private fun PageThumbnail(
     page: PageItem,
     onClick: () -> Unit
 ) {
-    val borderColor = if (page.isSelected)
-        MaterialTheme.colorScheme.primary
-    else
-        MaterialTheme.colorScheme.outlineVariant
-
-    val borderWidth = if (page.isSelected) 3.dp else 1.dp
-
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .border(borderWidth, borderColor, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (page.isSelected) 4.dp else 1.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.75f)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            if (page.bitmap != null) {
-                androidx.compose.foundation.Image(
-                    bitmap = page.bitmap.asImageBitmap(),
-                    contentDescription = page.label,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(4.dp),
-                    contentScale = ContentScale.Fit
-                )
-            }
-            if (page.isSelected) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(24.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "✓",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 14.sp
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.75f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                if (page.bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = page.bitmap.asImageBitmap(),
+                        contentDescription = page.label,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(4.dp),
+                        contentScale = ContentScale.Fit
                     )
                 }
+                if (page.isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                            )
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .size(22.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = "已选",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .size(22.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 2.dp
+                    ) {}
+                }
             }
+            Text(
+                text = page.label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp, horizontal = 4.dp)
+            )
         }
-        Text(
-            text = page.label,
-            style = MaterialTheme.typography.labelSmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 4.dp)
-        )
     }
 }

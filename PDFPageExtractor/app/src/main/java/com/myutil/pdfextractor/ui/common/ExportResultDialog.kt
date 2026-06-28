@@ -1,48 +1,81 @@
 package com.myutil.pdfextractor.ui.common
 
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun ExportResultDialog(
-    message: String,
     onDismiss: () -> Unit,
-    onShare: (() -> Unit)? = null,
-    onSave: (() -> Unit)? = null
+    onShare: () -> Unit,
+    onSave: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
         title = {
-            Text(if (message.contains("成功")) "完成" else "提示")
+            Text(
+                "导出完成",
+                style = MaterialTheme.typography.titleLarge
+            )
         },
         text = {
-            Text(message)
-        },
-        confirmButton = {
-            Row {
-                if (onSave != null) {
-                    TextButton(onClick = onSave) {
-                        Text("保存到...")
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "PDF 文件已生成",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                TextButton(
+                    onClick = onSave,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Outlined.SaveAlt,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("保存到本地")
                 }
-                if (onShare != null) {
-                    TextButton(onClick = onShare) {
-                        Text("分享")
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("确定")
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(
+                    onClick = onShare,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Outlined.IosShare,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("分享给朋友")
                 }
             }
-        }
+        },
+        confirmButton = {}
     )
 }

@@ -53,8 +53,37 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
 
     private var cornerWarpJob: Job? = null
 
+    var removeWritingEnabled by mutableStateOf(false)
+
     var showOriginal by mutableStateOf(false)
         private set
+
+    fun toggleRemoveWriting() {
+        removeWritingEnabled = !removeWritingEnabled
+        reprocess()
+    }
+
+    private fun reprocess() {
+        val bitmap = _originalBitmap.value ?: return
+        viewModelScope.launch {
+            _isProcessing.value = true
+            try {
+                val context = getApplication<Application>()
+                val result = withContext(Dispatchers.IO) {
+                    if (removeWritingEnabled) {
+                        // 去笔迹模式：只移除手写，不二值化
+                        imageProcessor.removeHandwriting(bitmap, context)
+                    } else {
+                        // 正常模式：二值化处理
+                        imageProcessor.toPrintReady(bitmap)
+                    }
+                }
+                _correctedBitmap.value = result
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
 
     fun loadImage(uri: Uri) {
         viewModelScope.launch {
@@ -77,16 +106,13 @@ class ScanPreviewViewModel(application: Application) : AndroidViewModel(applicat
                 }
                 if (bitmap == null) {
                     _exportResult.value = "无法读取图片，请检查文件权限"
+                    _isProcessing.value = false
                     return@launch
                 }
                 _originalBitmap.value = bitmap
-                val printReady = withContext(Dispatchers.IO) {
-                    imageProcessor.toPrintReady(bitmap)
-                }
-                _correctedBitmap.value = printReady
+                reprocess()
             } catch (e: Exception) {
                 _exportResult.value = "加载图片失败: ${e.message}"
-            } finally {
                 _isProcessing.value = false
             }
         }

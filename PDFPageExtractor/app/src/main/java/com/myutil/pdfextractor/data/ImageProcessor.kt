@@ -152,6 +152,74 @@ class ImageProcessor {
         }
     }
 
+    fun removeHandwriting(bitmap: Bitmap, context: android.content.Context? = null): Bitmap {
+        return removeHandwritingByColor(bitmap)
+    }
+
+    private fun removeHandwritingByColor(bitmap: Bitmap): Bitmap {
+        ensureInitialized()
+        val argb = if (bitmap.config != Bitmap.Config.ARGB_8888)
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
+        val src = Mat()
+        Utils.bitmapToMat(argb, src)
+        if (argb !== bitmap) argb.recycle()
+
+        // Only remove colored ink handwriting (blue/red/green)
+        val hsv = Mat()
+        Imgproc.cvtColor(src, hsv, Imgproc.COLOR_RGB2HSV)
+
+        val maskColor = Mat.zeros(src.size(), CvType.CV_8UC1)
+
+        // Blue ink
+        val maskBlue = Mat()
+        Core.inRange(hsv, Scalar(100.0, 40.0, 40.0), Scalar(140.0, 255.0, 255.0), maskBlue)
+        Core.bitwise_or(maskColor, maskBlue, maskColor)
+        maskBlue.release()
+
+        // Red ink
+        val maskRed1 = Mat()
+        val maskRed2 = Mat()
+        Core.inRange(hsv, Scalar(0.0, 40.0, 40.0), Scalar(10.0, 255.0, 255.0), maskRed1)
+        Core.inRange(hsv, Scalar(160.0, 40.0, 40.0), Scalar(180.0, 255.0, 255.0), maskRed2)
+        Core.bitwise_or(maskColor, maskRed1, maskColor)
+        Core.bitwise_or(maskColor, maskRed2, maskColor)
+        maskRed1.release()
+        maskRed2.release()
+
+        // Green ink
+        val maskGreen = Mat()
+        Core.inRange(hsv, Scalar(40.0, 40.0, 40.0), Scalar(80.0, 255.0, 255.0), maskGreen)
+        Core.bitwise_or(maskColor, maskGreen, maskColor)
+        maskGreen.release()
+        hsv.release()
+
+        // Dilate mask to cover edges
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        Imgproc.dilate(maskColor, maskColor, kernel)
+        kernel.release()
+
+        // Inpaint using the Gaussian-blurred background as fill
+        val bg = Mat()
+        val gray = Mat()
+        Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY)
+        val blurSize = ((minOf(gray.cols(), gray.rows()) / 6) or 1).coerceIn(51, 501)
+        Imgproc.GaussianBlur(gray, bg, Size(blurSize.toDouble(), blurSize.toDouble()), 0.0)
+
+        val result = Mat()
+        src.copyTo(result)
+        bg.copyTo(result, maskColor)
+
+        val outBitmap = Bitmap.createBitmap(result.cols(), result.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(result, outBitmap)
+
+        src.release()
+        gray.release()
+        bg.release()
+        maskColor.release()
+        result.release()
+        return outBitmap
+    }
+
     fun toPrintReady(bitmap: Bitmap): Bitmap {
         ensureInitialized()
         val argb = if (bitmap.config != Bitmap.Config.ARGB_8888)

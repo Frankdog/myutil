@@ -17,14 +17,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.myutil.pdfextractor.ui.common.ExportResultDialog
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScanPreviewScreen(
+    imageUri: Uri,
     onBack: () -> Unit,
     viewModel: ScanPreviewViewModel = viewModel()
 ) {
@@ -32,63 +33,11 @@ fun ScanPreviewScreen(
     val isProcessing by viewModel.isProcessing.collectAsState()
     val exportResult by viewModel.exportResult.collectAsState()
     val shareUri by viewModel.shareUri.collectAsState()
-
     val context = LocalContext.current
 
-    var showSourcePicker by remember { mutableStateOf(true) }
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
-
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let {
-            showSourcePicker = false
-            viewModel.loadImage(it)
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && cameraUri != null) {
-            showSourcePicker = false
-            viewModel.loadImage(cameraUri!!)
-        }
-    }
-
-    if (showSourcePicker) {
-        AlertDialog(
-            onDismissRequest = onBack,
-            title = { Text("选择图片来源") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            val file = File(context.cacheDir, "camera_${System.currentTimeMillis()}.jpg")
-                            cameraUri = androidx.core.content.FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file
-                            )
-                            cameraLauncher.launch(cameraUri!!)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("拍照", modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                    TextButton(
-                        onClick = { galleryLauncher.launch("image/*") },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("从相册选择", modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = onBack) { Text("取消") }
-            }
-        )
+    // 首次进入自动加载图片
+    LaunchedEffect(imageUri) {
+        viewModel.loadImage(imageUri)
     }
 
     val saveLauncher = rememberLauncherForActivityResult(
@@ -99,31 +48,34 @@ fun ScanPreviewScreen(
 
     val isExportSuccess by viewModel.isExportSuccess.collectAsState()
 
-    exportResult?.let { message ->
-        val showShareSave = shareUri != null && isExportSuccess
+    exportResult?.let {
         ExportResultDialog(
-            message = message,
             onDismiss = { viewModel.clearExportResult() },
-            onShare = if (showShareSave && shareUri != null) {
-                {
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/pdf"
-                        putExtra(Intent.EXTRA_STREAM, shareUri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "分享到"))
+            onShare = {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_STREAM, shareUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-            } else null,
-            onSave = if (showShareSave) {
-                { saveLauncher.launch("scanned_document.pdf") }
-            } else null
+                context.startActivity(Intent.createChooser(intent, "分享到"))
+            },
+            onSave = { saveLauncher.launch("scanned_document.pdf") }
         )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("文档扫描") },
+                title = {
+                    Column {
+                        Text("文档扫描", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "拍照或相册 → 打印 PDF",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -132,13 +84,25 @@ fun ScanPreviewScreen(
             )
         },
         bottomBar = {
-            Surface(shadowElevation = 8.dp) {
+            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = viewModel.removeWritingEnabled,
+                            onClick = { viewModel.toggleRemoveWriting() },
+                            label = { Text("去笔迹") },
+                            enabled = !isProcessing,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     Button(
                         onClick = { viewModel.exportToCache() },
                         modifier = Modifier.fillMaxWidth(),
@@ -160,7 +124,7 @@ fun ScanPreviewScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("处理中...", style = MaterialTheme.typography.bodySmall)
+                    Text("处理中…", style = MaterialTheme.typography.bodySmall)
                 }
             } else {
                 correctedBitmap?.let { bitmap ->
@@ -175,7 +139,7 @@ fun ScanPreviewScreen(
                             contentDescription = "处理后",
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(12.dp)),
                             contentScale = ContentScale.Fit
                         )
                     }

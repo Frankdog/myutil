@@ -4,10 +4,21 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Document body -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M36,24h36l18,18v42a6,6 0,0 1,-6 6H36a6,6 0,0 1,-6 -6V30a6,6 0,0 1,6 -6z" />
+        android:pathData="M36,24h24l18,18v42a6,6 0,0 1,-6 6H36a6,6 0,0 1,-6 -6V30a6,6 0,0 1,6 -6z" />
+    <!-- Fold triangle -->
     <path
-        android:fillColor="#1976D2"
-        android:pathData="M34,36h40v4H34zM34,46h40v4H34zM34,56h28v4H34z" />
+        android:fillColor="#E3F2FD"
+        android:pathData="M60,24v18h18L60,24z" />
+    <!-- Text lines -->
+    <path
+        android:fillColor="#90CAF9"
+        android:pathData="M34,50h34v3H34zM34,58h28v3H34zM34,66h24v3H34z" />
+    <!-- Scan beam representing document scanner -->
+    <path
+        android:fillColor="#42A5F5"
+        android:fillAlpha="0.3"
+        android:pathData="M64,66 l14,14 l-14,14 z" />
 </vector>
